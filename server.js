@@ -40,19 +40,114 @@ const names = [
   'Seattle Cascades'
 ];
 
-const base = names.map((name, i) => ({
-  id: i + 1,
-  name,
-  cash: 1500000 - i * 35000,
-  management: 78 - (i % 9),
-  staff: 82 - (i % 7),
-  recruiting: 80 - (i % 11),
-  design: 84 - (i % 10),
-  morale: 80,
-  stability: 82,
-  score: 68 + Math.max(0, 15 - i) * 0.45,
-  status: 'ACTIVE'
-}));
+const base = names.map((name, i) => {
+
+  /*
+    Create general competitive bubbles.
+
+    Corps are NOT given an exact predetermined score.
+
+    Every new/reset universe gets variation while
+    maintaining noticeable gaps between groups.
+  */
+
+  const bubble = Math.floor(i / 5);
+
+  let minScore;
+  let maxScore;
+
+  if (bubble === 0) {
+    // Top group
+    minScore = 72;
+    maxScore = 76;
+  }
+  else if (bubble === 1) {
+    // Upper-middle group
+    minScore = 65;
+    maxScore = 71;
+  }
+  else if (bubble === 2) {
+    // Lower-middle group
+    minScore = 58;
+    maxScore = 64;
+  }
+  else {
+    // Lower group
+    minScore = 50;
+    maxScore = 57;
+  }
+
+  // Random starting score inside that corps' bubble
+  const score =
+    minScore +
+    Math.random() * (maxScore - minScore);
+
+  /*
+    Strength is separate from current score.
+
+    This controls the corps' long-term competitive
+    potential instead of directly being its score.
+  */
+
+  const strength = Math.max(
+    40,
+    Math.min(
+      100,
+      score + 14 + (Math.random() * 6 - 3)
+    )
+  );
+
+  return {
+    id: i + 1,
+    name,
+
+    cash:
+      900000 +
+      Math.round(Math.random() * 900000),
+
+    management:
+      55 + Math.round(Math.random() * 35),
+
+    staff:
+      Math.max(
+        40,
+        Math.min(
+          100,
+          Math.round(strength + (Math.random() * 10 - 5))
+        )
+      ),
+
+    recruiting:
+      Math.max(
+        40,
+        Math.min(
+          100,
+          Math.round(strength + (Math.random() * 12 - 6))
+        )
+      ),
+
+    design:
+      Math.max(
+        40,
+        Math.min(
+          100,
+          Math.round(strength + (Math.random() * 12 - 6))
+        )
+      ),
+
+    morale:
+      65 + Math.round(Math.random() * 25),
+
+    stability:
+      65 + Math.round(Math.random() * 25),
+
+    strength: +strength.toFixed(2),
+
+    score: +score.toFixed(3),
+
+    status: 'ACTIVE'
+  };
+});
 
 let mem = {
   year: 2027,
@@ -236,6 +331,76 @@ app.post('/api/step', async (req, res) => {
 });
 
 
+app.post('/api/corps', async (req, res) => {
+  const name = String(req.body.name || '').trim();
+
+  if (!name) {
+    return res.status(400).json({
+      error: 'Corps name is required.'
+    });
+  }
+
+  // Prevent duplicate corps names
+  const exists = mem.corps.some(
+    c => c.name.toLowerCase() === name.toLowerCase()
+  );
+
+  if (exists) {
+    return res.status(400).json({
+      error: 'A corps with that name already exists.'
+    });
+  }
+
+  // Find next available ID
+  const newId =
+    mem.corps.length > 0
+      ? Math.max(...mem.corps.map(c => Number(c.id))) + 1
+      : 1;
+
+  const newCorps = {
+    id: newId,
+    name,
+
+    // Default finances
+    cash: 1000000,
+
+    // Default organizational stats
+    management: 60,
+    staff: 60,
+    recruiting: 60,
+    design: 60,
+    morale: 60,
+    stability: 60,
+
+    // Default long-term strength
+    strength: 60,
+
+    // New corps starts somewhere in this range
+    score: +(50 + Math.random() * 10).toFixed(3),
+
+    status: 'ACTIVE',
+
+    // Useful later for tracking expansion corps
+    founded: mem.year
+  };
+
+  mem.corps.push(newCorps);
+
+  // Add the corps to the current graph starting NOW.
+  // It won't appear historically before it existed.
+  if (mem.history.length > 0) {
+    const current = mem.history[mem.history.length - 1];
+
+    if (current && current.scores) {
+      current.scores[newId] = newCorps.score;
+    }
+  }
+
+  await save();
+
+  res.status(201).json(newCorps);
+});
+
 app.post('/api/new-season', async (req, res) => {
   mem.year++;
   mem.day = 0;
@@ -243,36 +408,80 @@ app.post('/api/new-season', async (req, res) => {
   mem.history = [];
 
   for (const c of mem.corps) {
-    if (c.status === 'ACTIVE') {
 
-      // Keep the previous season's ending score.
-      // Do NOT reset/recalculate c.score.
-
-      // Offseason financial change
-      c.cash += Math.round(
-        (c.management - 50) * 12000
-      );
-
-      // Small offseason organizational changes
-      c.morale = Math.max(
-        0,
-        Math.min(
-          100,
-          c.morale + (Math.random() * 4 - 2)
-        )
-      );
-
-      c.stability = Math.max(
-        0,
-        Math.min(
-          100,
-          c.stability + (Math.random() * 4 - 2)
-        )
-      );
+    if (c.status !== 'ACTIVE') {
+      continue;
     }
+
+    // Offseason organization changes
+    c.cash += Math.round(
+      (c.management - 50) * 12000
+    );
+
+    c.morale = Math.max(
+      0,
+      Math.min(
+        100,
+        c.morale + (Math.random() * 6 - 3)
+      )
+    );
+
+    c.stability = Math.max(
+      0,
+      Math.min(
+        100,
+        c.stability + (Math.random() * 6 - 3)
+      )
+    );
+
+    /*
+      Persistent corps strength changes based on
+      how well the organization is being operated.
+    */
+
+    const organizationalQuality =
+      (
+        c.management +
+        c.staff +
+        c.recruiting +
+        c.design +
+        c.morale +
+        c.stability
+      ) / 6;
+
+    const strengthChange =
+      (organizationalQuality - 70) / 20 +
+      (Math.random() * 2 - 1);
+
+    c.strength = Math.max(
+      35,
+      Math.min(
+        100,
+        (c.strength || c.score) + strengthChange
+      )
+    );
+
+    /*
+      Competition score DOES reset.
+
+      Strong corps still begin ahead of weak corps,
+      but nobody starts a new season at 98.
+    */
+
+    c.score =
+      49 +
+      c.strength * 0.30 +
+      (Math.random() * 1.5 - 0.75);
+
+    c.score = Math.max(
+      50,
+      Math.min(
+        85,
+        +c.score.toFixed(3)
+      )
+    );
   }
 
-  // Create the starting point for the new season graph
   mem.history.push({
     year: mem.year,
     day: 0,
