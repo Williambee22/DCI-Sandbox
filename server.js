@@ -244,27 +244,47 @@ app.post('/api/new-season', async (req, res) => {
 
   for (const c of mem.corps) {
     if (c.status === 'ACTIVE') {
-      c.score =
-        64 +
-        (c.design + c.staff + c.recruiting) / 12 +
-        (Math.random() * 3 - 1.5);
 
-      c.score = Math.min(
-        88,
-        +c.score.toFixed(3)
-      );
+      // Keep the previous season's ending score.
+      // Do NOT reset/recalculate c.score.
 
+      // Offseason financial change
       c.cash += Math.round(
         (c.management - 50) * 12000
       );
+
+      // Small offseason organizational changes
+      c.morale = Math.max(
+        0,
+        Math.min(
+          100,
+          c.morale + (Math.random() * 4 - 2)
+        )
+      );
+
+      c.stability = Math.max(
+        0,
+        Math.min(
+          100,
+          c.stability + (Math.random() * 4 - 2)
+        )
+      );
     }
   }
+
+  // Create the starting point for the new season graph
+  mem.history.push({
+    year: mem.year,
+    day: 0,
+    scores: Object.fromEntries(
+      mem.corps.map(c => [c.id, c.score])
+    )
+  });
 
   await save();
 
   res.json(mem);
 });
-
 
 app.post('/api/reset', async (req, res) => {
   mem = {
